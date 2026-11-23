@@ -17,15 +17,19 @@ FetchContent_Declare(Corrosion
     GIT_TAG        v0.6.1)
 FetchContent_MakeAvailable(Corrosion)
 
-set(_saved_lib_out "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/rust-out")
+if(ANDROID)
+    set(_saved_lib_out "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/rust-out")
+endif()
 
 corrosion_import_crate(
     MANIFEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml"
     CRATES cswebservo
     PROFILE release)
 
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${_saved_lib_out}")
+if(ANDROID)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${_saved_lib_out}")
+endif()
 
 set(_prefix "")
 if(ANDROID)
