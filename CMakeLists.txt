@@ -15,6 +15,12 @@ include(FetchContent)
 FetchContent_Declare(Corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
     GIT_TAG        v0.6.1)
+# toolchain version from rust-toolchain.toml
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/rust/rust-toolchain.toml" _rust_channel_line
+     REGEX "^channel[ \t]*=")
+string(REGEX REPLACE "^channel[ \t]*=[ \t]*\"([^\"]+)\".*" "\\1" _rust_channel "${_rust_channel_line}")
+set(Rust_TOOLCHAIN "${_rust_channel}" CACHE STRING "Rust toolchain for CSWeb" FORCE)
+set(Rust_RUSTUP_INSTALL_MISSING_TARGET ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(Corrosion)
 
 if(ANDROID)
