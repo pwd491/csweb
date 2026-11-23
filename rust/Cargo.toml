@@ -10,8 +10,9 @@ crate-type = ["cdylib"]
 [dependencies]
 libservo = {
     package = "servo",
-    git = "https://github.com/servo/servo",
-    rev = "f0c02de154a7f6f4c62de0d8d929e488cf667f54",
+    git = "https://github.com/pwd491/servo",
+    # branch = "cs16client",
+    rev = "6dea864e9eaebfdb75b744839ba0dbd5139b18dc",
     features = ["baked-in-resources"]
 }
 dpi = "0.1.2"
