@@ -11,7 +11,6 @@ crate-type = ["cdylib"]
 libservo = {
     package = "servo",
     git = "https://github.com/pwd491/servo",
-    # branch = "cs16client",
     rev = "6dea864e9eaebfdb75b744839ba0dbd5139b18dc",
     features = ["baked-in-resources"]
 }

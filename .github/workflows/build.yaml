@@ -1,0 +1,292 @@
+name: Build CSWeb libraries
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LIB_BASENAME: cswebservo
+  ANDROID_API: "21"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            buildos: ""
+            buildarch: amd64
+            windows: true
+
+          # Linux x64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            buildos: ""
+            buildarch: amd64
+
+          # MacOS x64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            buildos: ""
+            buildarch: amd64
+
+          # MacOS arm64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            buildos: ""
+            buildarch: arm64
+
+          # Android arm64-v8a
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+            buildos: android
+            buildarch: arm64
+            android: true
+            ndk_abi: arm64-v8a
+            ndk_triple: aarch64-linux-android
+
+          # Android armeabi-v7a
+          - os: ubuntu-latest
+            target: armv7-linux-androideabi
+            buildos: android
+            buildarch: armv7
+            android: true
+            ndk_abi: armeabi-v7a
+            ndk_triple: arm-linux-androideabi
+
+          # Windows x86
+          # - os: windows-latest
+          #   target: i686-pc-windows-msvc
+          #   buildos: ""
+          #   buildarch: x86
+          #   windows: true
+
+          # Linux x86
+          # - os: ubuntu-latest
+          #   target: i686-unknown-linux-gnu
+          #   buildos: ""
+          #   buildarch: i686
+          #   linux32: true
+
+          # Android x86
+          # - os: ubuntu-latest
+          #   target: i686-linux-android
+          #   buildos: android
+          #   buildarch: x86
+          #   android: true
+          #   ndk_abi: x86
+          #   ndk_triple: i686-linux-android
+
+    runs-on: ${{ matrix.os }}
+
+    continue-on-error: >-
+      ${{
+        matrix.target == 'i686-pc-windows-msvc' ||
+        matrix.target == 'i686-unknown-linux-gnu' ||
+        matrix.target == 'i686-linux-android'
+      }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.99.1
+        uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1 # v1
+        with:
+          toolchain: "1.99.1"
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux' && !matrix.android
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libfontconfig1-dev \
+            ${{ matrix.linux32 && 'gcc-multilib' || '' }}
+
+      - name: Enable Windows long paths
+        if: matrix.windows
+        shell: bash
+        run: |
+          git config --global core.longpaths true
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+      # ---------- Android ----------
+      - name: Install cargo-ndk
+        if: matrix.android
+        run: cargo install cargo-ndk --locked
+
+      - name: Setup Android NDK r26d
+        if: matrix.android
+        id: setup-ndk
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
+        with:
+          ndk-version: r26d
+          add-to-path: true
+
+      - name: Configure Android NDK
+        if: matrix.android
+        shell: bash
+        run: |
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - name: Verify Android NDK
+        if: matrix.android
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          test -d "$ANDROID_NDK_HOME"
+          test -f "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.ndk_triple }}/libc++_shared.so"
+
+      # ---------- Build ----------
+      - name: Build (Unix / Android)
+        if: ${{ !matrix.windows }}
+        working-directory: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.android }}" == "true" ]]; then
+            export ANDROID_PLATFORM="${ANDROID_API}"
+            export ANDROID_API_LEVEL="${ANDROID_API}"
+
+            cargo ndk \
+              --platform "${ANDROID_API}" \
+              -t "${{ matrix.ndk_abi }}" \
+              -o ./android-out \
+              build --release
+          else
+            cargo build --release --target "${{ matrix.target }}"
+          fi
+
+      - name: Build (Windows)
+        if: matrix.windows
+        working-directory: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target "${{ matrix.target }}"
+
+      # ---------- Artifact name ----------
+      - name: Determine artifact name
+        id: name
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.buildos }}" == "" ]]; then
+            POSTFIX="_${{ matrix.buildarch }}"
+          else
+            POSTFIX="_${{ matrix.buildos }}_${{ matrix.buildarch }}"
+          fi
+
+          case "${{ matrix.target }}" in
+            *android*) EXT="so"; PREFIX="lib" ;;
+            *linux*)   EXT="so"; PREFIX="" ;;
+            *windows*) EXT="dll"; PREFIX="" ;;
+            *apple*)   EXT="dylib; PREFIX=""" ;;
+            *)
+              echo "Unknown target: ${{ matrix.target }}"
+              exit 1
+              ;;
+          esac
+
+          echo "artifact_name=${PREFIX}csweb${POSTFIX}.${EXT}" >> "$GITHUB_OUTPUT"
+
+      # ---------- Stage ----------
+      - name: Stage artifacts (Unix / Android)
+        if: ${{ !matrix.windows }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          if [[ "${{ matrix.android }}" == "true" ]]; then
+            LIB="rust/android-out/${{ matrix.ndk_abi }}/lib${LIB_BASENAME}.so"
+          else
+            SRC="rust/target/${{ matrix.target }}/release"
+            case "${{ matrix.target }}" in
+              *apple*) LIB="$SRC/lib${LIB_BASENAME}.dylib" ;;
+              *)       LIB="$SRC/lib${LIB_BASENAME}.so" ;;
+            esac
+          fi
+
+          if [[ ! -f "$LIB" ]]; then
+            echo "::error::Library not found: $LIB"
+            find rust -type f \( -name '*.so' -o -name '*.dylib' \) -not -path '*/deps/*' -not -path '*/build/*' -print
+            exit 1
+          fi
+
+          cp "$LIB" "dist/${{ steps.name.outputs.artifact_name }}"
+
+          if [[ "${{ matrix.android }}" == "true" ]]; then
+            NDK_LIB_DIR="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.ndk_triple }}"
+            cp "$NDK_LIB_DIR/libc++_shared.so" dist/
+          fi
+
+          ls -l dist
+
+      - name: Stage artifacts (Windows)
+        if: matrix.windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          LIB="rust/target/${{ matrix.target }}/release/${LIB_BASENAME}.dll"
+
+          if [[ ! -f "$LIB" ]]; then
+            echo "::error::Library not found: $LIB"
+            find rust/target -type f -name '*.dll' -not -path '*/deps/*' -not -path '*/build/*' -print
+            exit 1
+          fi
+
+          cp "$LIB" "dist/${{ steps.name.outputs.artifact_name }}"
+          ls -l dist
+
+      # ---------- Upload ----------
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.name.outputs.artifact_name }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*csweb_*"
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -l dist
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
