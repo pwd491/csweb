@@ -197,7 +197,7 @@ jobs:
             *android*) EXT="so"; PREFIX="lib" ;;
             *linux*)   EXT="so"; PREFIX="" ;;
             *windows*) EXT="dll"; PREFIX="" ;;
-            *apple*)   EXT="dylib; PREFIX=""" ;;
+            *apple*)   EXT="dylib"; PREFIX="" ;;
             *)
               echo "Unknown target: ${{ matrix.target }}"
               exit 1
