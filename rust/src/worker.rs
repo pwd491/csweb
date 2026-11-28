@@ -142,9 +142,10 @@ impl Worker {
                 if let Some(v) = self.views.get(&id) {
                     let size = PhysicalSize::new(width, height);
                     let _ = v.context.make_current();
-                    v.context.resize(size);
                     v.webview.resize(size);
                     v.delegate.frame_ready.set(true);
+                    log::info!("view {id} resized to {width}x{height}");
+                    log::info!("scale factor: {:?}",v.webview.hidpi_scale_factor());
                 }
             }
             Cmd::Load { id, url } => {
